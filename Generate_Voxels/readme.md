@@ -32,7 +32,7 @@ o3d.visualization.draw_geometries([pcd, voxel_pcd])
 
 ## 🌊 How to Generate New Depth Images
 
-This code works best with **high-quality depth images**. The original ones may not yield good voxelizations, so we recommend using **Depth Anything V2** to generate improved depth maps.
+This code works **ONLY FOR NOW** with high-quality depth images. The original ones **CANNOT** yield good voxelizations, so we recommend using **Depth Anything V2** to generate improved depth maps.
 
 ### Steps:
 
