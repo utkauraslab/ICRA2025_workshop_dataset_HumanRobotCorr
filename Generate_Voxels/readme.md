@@ -25,6 +25,8 @@ python3 pcl_voxelization.py
 ```
 o3d.visualization.draw_geometries([pcd, voxel_pcd])
 ```
+- Refer to `example_voxels_pcl.png` for a visual reference: colored points represent the original point cloud, while black points indicate voxel centers.
+
 
 ---
 
