@@ -7,14 +7,20 @@
 
 ---
 
+
 ## 🚀 How to Run
 
 ```
 python3 pcl_voxelization.py
 ```
 
-- Running this script will generate a variable called `voxel_grid` (around **line 267**) which can be used for subsequent steps.
-- To visualize the generated voxel grid, use:
+- This script will compute a voxel grid and store it in a variable named `voxel_grid` (defined around **line 267**).
+- The shape of `voxel_grid` is: `torch.Size([1, 100, 100, 100, 10])`, representing:
+  - `B x D x H x W x C`, where:
+    - `B`: batch size
+    - `D/H/W`: voxel grid resolution (e.g., 100³)
+    - `C`: feature dimension (e.g., 10)
+- To visualize the resulting voxel grid along with the original point cloud, run:
 
 ```
 o3d.visualization.draw_geometries([pcd, voxel_pcd])
@@ -44,3 +50,17 @@ git clone https://github.com/DepthAnything/Depth-Anything-V2
 ```
 python3 get_depth_images.py
 ```
+
+## 📁 Required Files and Directory Structure
+
+Make sure your directory structure under `Generate_Voxels/` looks like this:
+
+```
+Generate_Voxels/
+├── DAV2/                # The cloned Depth Anything V2 repo (rename the folder to 'DAV2')
+├── checkpoints/         # The folder containing the pretrained model files
+├── get_depth_images.py  # Script to generate new depth images
+├── pcl_voxelization.py  # Main voxelization script
+├── utilis.py            # Custom utility functions used by the scripts
+```
+
