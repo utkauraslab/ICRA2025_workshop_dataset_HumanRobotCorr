@@ -186,8 +186,8 @@ def voxel_grid_to_pointcloud_aligned_dynamic(
 if __name__ == "__main__":
 
     # ----Configuration ----
-    label_cvs_path = '/home/tianr/Desktop/ICRA_WORKSHOP/PerAct/datasets/dataset_depth/robot/cam_104122061850/pick/0004/Labelled_Robot_004.csv'
-    image_root_folder = '/home/tianr/Desktop/ICRA_WORKSHOP/PerAct/datasets/dataset_depth/robot'
+    label_cvs_path = '/home/fei/Documents/Dataset/icra25_align_human_robot/labeled/robot/cam_104122061850/pick/0004/Labelled_Robot_004.csv'
+    image_root_folder = '/home/fei/Documents/Dataset/icra25_align_human_robot/labeled/robot'
 
     # ---- Process ----
     timestamps = get_timestamps_from_csv(label_cvs_path)

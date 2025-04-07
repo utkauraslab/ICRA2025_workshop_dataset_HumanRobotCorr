@@ -10,8 +10,10 @@ import torch.nn.functional as F
 import numpy as np
 import open3d as o3d
 import cv2
+import matplotlib.pyplot as plt
 
 import pdb
+
 
 MIN_DENOMINATOR = 1e-12
 INCLUDE_PER_VOXEL_COORD = False
@@ -85,6 +87,7 @@ class VoxelGrid(nn.Module):
             [1, self._num_coords, 1])
 
         w = self._voxel_shape[0] + 2
+
         arange = torch.arange(0, w, dtype=torch.float, device=device)
         self._index_grid = torch.cat([
             arange.view(w, 1, 1, 1).repeat([1, w, w, 1]),
@@ -145,16 +148,22 @@ class VoxelGrid(nn.Module):
             out=torch.zeros_like(self._flat_output))
         return flat_scatter.view(self._total_dims_list)
 
-    def coords_to_bounding_voxel_grid(self, coords, coord_features=None,
-                                      coord_bounds=None):
+    def coords_to_bounding_voxel_grid(self, coords, coord_features=None):
         voxel_indicy_denmominator = self._voxel_indicy_denmominator
         res, bb_mins = self._res, self._bb_mins
-        if coord_bounds is not None:
-            bb_mins = coord_bounds[..., 0:3]
-            bb_maxs = coord_bounds[..., 3:6]
+
+        if self._coord_bounds is not None:
+
+            # coord_bounds = torch.tensor(coord_bounds, dtype=torch.float,
+            #                             device=self._device).unsqueeze(0)
+
+            bb_mins = self._coord_bounds[..., 0:3]
+            bb_maxs = self._coord_bounds[..., 3:6]
             bb_ranges = bb_maxs - bb_mins
             res = bb_ranges / (self._dims_orig.float() + MIN_DENOMINATOR)
             voxel_indicy_denmominator = res + MIN_DENOMINATOR
+
+        # pdb.set_trace()
 
         bb_mins_shifted = bb_mins - res  # shift back by one
         floor = torch.floor(
@@ -325,3 +334,172 @@ class RGBDPointCloudGenerator:
         img_coords[full_valid] = np.stack([final_u, final_v], axis=1)
 
         return img_coords, full_valid
+
+
+class VoxelGenerator:
+    def __init__(self, scene_bounds, voxel_sizes, batch_size, image_size, cam_num, device):
+        self.scene_bounds = scene_bounds
+        self.voxel_sizes = voxel_sizes[0]
+        self.batch_size = batch_size
+        self.image_h = image_size[0]
+        self.image_w = image_size[1]
+        self.cam_num = cam_num
+        self.device = device
+
+        # pdb.set_trace()
+
+        # Initialize VoxelGrid for each voxel size
+        self.vox_grid = VoxelGrid(
+            coord_bounds=self.scene_bounds,
+            voxel_size=self.voxel_sizes,
+            device=device,
+            batch_size=self.batch_size,
+            feature_size=3,
+            max_num_coords=np.prod([self.image_h, self.image_w]) * self.cam_num,
+        )
+
+        self.generator = RGBDPointCloudGenerator(
+            min_depth_m=0.4, max_depth_m=1)
+
+    def _norm_rgb(self, x):
+        return (x.float() / 255.0) * 2.0 - 1.0
+
+    def _preprocess_inputs(self, rgb, pcd):
+
+        # pdb.set_trace()
+
+        obs, pcds = [], []
+
+        rgb_norm = self._norm_rgb(rgb)
+
+        # obs contains both rgb and pointcloud (used in ARM for other baselines)
+        obs.append([rgb_norm, pcd])
+        pcds.append(pcd)  # only pointcloud
+
+        # pdb.set_trace()
+
+        return obs, pcds
+
+    def get_colors_from_image(self, rgb_np: np.ndarray, img_coords: np.ndarray, valid_mask: np.ndarray):
+        """
+        Get RGB color for each valid projected point.
+
+        Args:
+            rgb_np: (H, W, 3) RGB image
+            img_coords: (N, 2) pixel coordinates [u, v]
+            valid_mask: (N,) valid projection mask
+
+        Returns:
+            colors: (M, 3) array of RGB colors for valid points
+        """
+        uvs = img_coords[valid_mask]  # shape: (M, 2)
+        v = uvs[:, 1]
+        u = uvs[:, 0]
+        colors = rgb_np[v, u]  # (M, 3)
+
+        return colors
+
+    def visualize_projected_points(self,
+                                   rgb_np: np.ndarray,
+                                   img_coords: np.ndarray,
+                                   valid_mask: np.ndarray,
+                                   dot_size: int = 0.2,
+                                   color: str = 'red'
+                                   ):
+        """
+        Visualize projected 3D points overlaid on the RGB image.
+
+        Args:
+            rgb_np: (H, W, 3) RGB image
+            img_coords: (N, 2) array of 2D pixel coordinates (u, v)
+            valid_mask: (N,) boolean mask of valid projected points
+            dot_size: Size of the plotted dots
+            color: Color of the overlay dots (default: red)
+        """
+        # Filter only valid pixel positions
+        uvs = img_coords[valid_mask]
+
+        # Visualize using matplotlib
+        plt.figure(figsize=(10, 6))
+        plt.imshow(rgb_np)
+        plt.scatter(uvs[:, 0], uvs[:, 1], s=dot_size, c=color, marker='o')
+        plt.title("Projected 3D Points on RGB Image")
+        # plt.axis('off')
+        # plt.tight_layout()
+        plt.show()
+
+    def voxel_grid_to_pointcloud_aligned_dynamic(self,
+                                                 voxel_grid, bounds, dims_orig=(100, 100, 100)
+                                                 ):
+        """
+        Converts voxel grid to point cloud in world space using bounding box and voxel count.
+
+        Args:
+            voxel_grid: (1, D, H, W, C)
+            bounds: (1, 6), [x_min, y_min, z_min, x_max, y_max, z_max]
+            dims_orig: Tuple[int, int, int], number of voxels in each dimension
+
+        Returns:
+            open3d.geometry.PointCloud
+        """
+        assert voxel_grid.shape[0] == 1, "Only batch size 1 supported"
+        vox_np = voxel_grid[0].cpu().numpy()
+        D, H, W = vox_np.shape[:3]
+
+        # pdb.set_trace()
+
+        # Compute voxel size from bounding box
+        if isinstance(bounds, torch.Tensor):
+            bounds = bounds[0].cpu().numpy()
+        else:
+            bounds = np.array(bounds)
+
+        bb_mins = bounds[:3]
+        bb_maxs = bounds[3:]
+
+        voxel_size = (bb_maxs - bb_mins) / np.array(dims_orig)  # (3,)
+
+        # Get indices of occupied voxels
+        occupancy = vox_np[..., -1] > 0.5
+        z, y, x = np.nonzero(occupancy)
+        voxel_indices = np.stack([z, y, x], axis=1)  # (N, 3)
+
+        # Map to world coordinates
+        centers_world = voxel_indices * \
+            voxel_size + bb_mins + (voxel_size / 2.0)
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(centers_world)
+        pcd.paint_uniform_color([0.0, 0.0, 0.0])  # Black
+        return pcd
+
+    def voxel_generation(self, rgb_np, pcl_tensor, pcd_img_coords, pcd_valid_mask, device):
+
+        pcd_img_rgb = self.get_colors_from_image(rgb_np, pcd_img_coords, pcd_valid_mask)
+        pcd_img_rgb_tensor = torch.tensor(pcd_img_rgb, dtype=torch.float, device=device)
+        obs, pcds = self._preprocess_inputs(pcd_img_rgb_tensor.unsqueeze(0), pcl_tensor.unsqueeze(0))
+
+        # pdb.set_trace()
+
+        # flattern for point cloud
+        pcd_flat = torch.cat(pcds, 1)
+
+        # flattern for the corresponding 2D image points
+        bs = obs[0][0].shape[0]
+        image_features = [o[0] for o in obs]
+        feat_size = image_features[0].shape[2]
+        flat_imag_features = torch.cat(
+            [p.reshape(bs, -1, feat_size) for p in image_features], 1)
+
+        # flat
+        # voxelize!
+        voxel_grid = self.vox_grid.coords_to_bounding_voxel_grid(pcd_flat, coord_features=flat_imag_features)
+
+        voxel_pcd = self.voxel_grid_to_pointcloud_aligned_dynamic(voxel_grid,
+                                                                  self.scene_bounds,
+                                                                  dims_orig=(self.voxel_sizes, self.voxel_sizes, self.voxel_sizes)
+                                                                  )
+
+        # o3d.visualization.draw_geometries([pcd_tensor, voxel_pcd])
+
+        return voxel_pcd
