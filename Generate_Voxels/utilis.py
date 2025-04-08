@@ -488,8 +488,7 @@ class VoxelGenerator:
         bs = obs[0][0].shape[0]
         image_features = [o[0] for o in obs]
         feat_size = image_features[0].shape[2]
-        flat_imag_features = torch.cat(
-            [p.reshape(bs, -1, feat_size) for p in image_features], 1)
+        flat_imag_features = torch.cat([p.reshape(bs, -1, feat_size) for p in image_features], 1)
 
         # flat
         # voxelize!
@@ -502,4 +501,4 @@ class VoxelGenerator:
 
         # o3d.visualization.draw_geometries([pcd_tensor, voxel_pcd])
 
-        return voxel_pcd
+        return voxel_grid, voxel_pcd
